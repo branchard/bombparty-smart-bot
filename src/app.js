@@ -10,14 +10,17 @@
 
 (() => {
     let localStorageName = 'bombpartySmartBot';
-    let learningEnabled = true;
+    let localStorageSettingdName = 'bombpartySmartBotSettings';
     let currentWord;
     let alreadyUsedWords = [];
 
-    function saveWord(word) {
-        if(!learningEnabled){
-            return;
-        }
+    let settings = {
+        // default settings, must be override by settings in local storage
+        learningEnabled: false,
+        typingEnabled: false
+    };
+
+    function saveWord(word, myself = false) {
         let currentStorage = [];
         let localStorageItem = localStorage.getItem(localStorageName);
 
@@ -53,11 +56,21 @@
         localStorage.setItem(localStorageName, JSON.stringify(currentStorage));
     }
 
-    function onCorrectWord(word) {
-        //log('Correct word is:', word);
-        //setTimeout(() => {
-        saveWord(word);
-        //}, 0);
+    function deleteWord(word) {
+        let parsedData = getWords();
+        localStorage.setItem(localStorageName, JSON.stringify(parsedData.filter(w => {
+            return w['word'] !== word;
+        })));
+    }
+
+    function getWords(){
+        return JSON.parse(localStorage.getItem(localStorageName));
+    }
+
+    function onCorrectWord(word, myself = false) {
+        if(settings.learningEnabled || myself){
+            saveWord(word, myself);
+        }
         alreadyUsedWords.push(word);
     }
 
@@ -112,10 +125,12 @@
                 return b['popularity'] - a['popularity'];
             })[0]['word'];
 
-            log('Typing:', word);
-            setTimeout(() => {
-                humanTyping(word, 0);
-            }, rand(850, 850 + word.length * 100));
+            if(settings.typingEnabled){
+                log('Typing:', word);
+                setTimeout(() => {
+                    humanTyping(word, 0);
+                }, rand(950, 950 + word.length * 100));
+            }
         } else {
             log('No words match: ', channel.data['wordRoot'])
         }
@@ -125,16 +140,35 @@
         alreadyUsedWords = [];
     }
 
+    function loadSettings(){
+        let storedSettings = {};
+        try{
+            storedSettings = JSON.parse(localStorage.getItem(localStorageSettingdName));
+        }catch (e) {
+
+        }
+
+        if(storedSettings){
+            settings = Object.assign(settings, storedSettings);
+        }
+    }
+    
+    function saveSettings() {
+        localStorage.setItem(localStorageSettingdName, JSON.stringify(settings));
+    }
+
     function rand(min, max) {
         return Math.trunc(Math.random() * (max - min) + min);
     }
 
-    function log(...messages){
+    function log(...messages) {
         console.log(`%c[BOT]%c ${messages.join(' ')}`, 'color: red;', 'color: initial;');
     }
 
     function init() {
-        log(`Learning ${learningEnabled ? 'is' : 'is not'} enabled`);
+        loadSettings();
+        log(`Typing ${settings.typingEnabled ? 'is' : 'is not'} enabled`);
+        log(`Learning ${settings.learningEnabled ? 'is' : 'is not'} enabled`);
 
         channel.socket.on('setWord', word => {
             // word is like: {playerAuthId: "***", word: "***"}
@@ -144,14 +178,14 @@
         channel.socket.on('winWord', winWord => {
             // winWord is like: {playerAuthId: "***"}
             if (currentWord && winWord['playerAuthId'] === currentWord['playerAuthId']) {
-                onCorrectWord(currentWord['word'].toLowerCase());
+                onCorrectWord(currentWord['word'].toLowerCase(), winWord['playerAuthId'] === app.user.authId);
             }
         });
 
         channel.socket.on('setActivePlayerIndex', playerIndex => {
             // detect if it's your turn
             if (channel.data.actors[playerIndex].authId === app.user.authId) {
-                log('ITS YOUR TURN!!');
+                log('It\'s my turn');
                 onPlayerTurn();
             }
         });
@@ -159,7 +193,7 @@
         channel.socket.on('failWord', player => {
             // detect if it's your turn
             if (player['playerAuthId'] === app.user.authId) {
-                log('TRY AGAIN');
+                log('I try again');
                 alreadyUsedWords.push(currentWord['word']);
                 // remove word
                 channel.socket.emit("setWord", {
@@ -174,12 +208,29 @@
         channel.socket.on('endGame', () => {
             onEndGame();
         });
+
+        // set global function
+        window.bot = {};
+        window.bot.addWord = saveWord;
+        window.bot.getWords = getWords;
+        window.bot.deleteWord = deleteWord;
+        window.bot.enableLearning = (param = true) => {
+            settings.learningEnabled = param === true;
+            log(`Learning is now ${settings.learningEnabled ? 'enabled' : 'disabled'}`);
+            saveSettings();
+        };
+
+        window.bot.enableTyping = (param = true) => {
+            settings.typingEnabled = param === true;
+            log(`Typing is now ${settings.typingEnabled ? 'enabled' : 'disabled'}`);
+            saveSettings();
+        };
     }
 
     // wait for socket
     let waitInterval = setInterval(() => {
         if (channel && channel.socket) {
-            log('Socket is ready!');
+            log('Socket is ready');
             clearInterval(waitInterval);
             init();
         }
