@@ -14,6 +14,7 @@
     let localStorageRageSentencesName = 'bombpartySmartBotRage';
     let currentWord;
     let alreadyUsedWords = [];
+    let typingTimeout;
 
     let settings = {
         // default settings, must be override by settings in local storage
@@ -119,7 +120,7 @@
             return;
         }
         let waitingTime = rand(95, 265);
-        setTimeout(() => {
+        typingTimeout = setTimeout(() => {
             // 5% luck to do mistake
             if (Math.random() < 0.05) {
                 channel.socket.emit("setWord", {
@@ -138,7 +139,9 @@
     }
 
     function stopTyping() {
-
+        if(typingTimeout){
+            clearTimeout(typingTimeout);
+        }
     }
 
     function onPlayerTurn() {
