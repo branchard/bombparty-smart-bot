@@ -141,6 +141,7 @@
     function stopTyping() {
         if(typingTimeout){
             clearTimeout(typingTimeout);
+            typingTimeout = null;
         }
     }
 
@@ -196,6 +197,7 @@
 
     function onEndGame() {
         alreadyUsedWords = [];
+        stopTyping();
     }
 
     function loadSettings() {
