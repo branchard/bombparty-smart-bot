@@ -10,14 +10,16 @@
 
 (() => {
     let localStorageName = 'bombpartySmartBot';
-    let localStorageSettingdName = 'bombpartySmartBotSettings';
+    let localStorageSettingsName = 'bombpartySmartBotSettings';
+    let localStorageRageSentencesName = 'bombpartySmartBotRage';
     let currentWord;
     let alreadyUsedWords = [];
 
     let settings = {
         // default settings, must be override by settings in local storage
         learningEnabled: false,
-        typingEnabled: false
+        typingEnabled: false,
+        rageEnabled: false
     };
 
     function saveWord(word, myself = false) {
@@ -63,18 +65,56 @@
         })));
     }
 
-    function getWords(){
+    function getWords() {
         return JSON.parse(localStorage.getItem(localStorageName));
     }
 
+    function getRandomRageSentence(){
+        // 50% chance to dont rage
+        if (Math.random() < 0.5) {
+            return '';
+        }
+
+        let currentStorage = [''];
+        let localStorageItem = localStorage.getItem(localStorageRageSentencesName);
+        if (localStorageItem) {
+            try {
+                let parsedData = JSON.parse(localStorageItem);
+                if (Array.isArray(parsedData)) {
+                    currentStorage = parsedData;
+                }
+            } catch (e) {
+
+            }
+        }
+        return currentStorage[rand(0, currentStorage.length - 1)];
+    }
+
+    function addRageSentence(sentence){
+        let currentStorage = [];
+        let localStorageItem = localStorage.getItem(localStorageRageSentencesName);
+        if (localStorageItem) {
+            try {
+                let parsedData = JSON.parse(localStorageItem);
+                if (Array.isArray(parsedData)) {
+                    currentStorage = parsedData;
+                }
+            } catch (e) {
+
+            }
+        }
+        currentStorage.push(sentence);
+        localStorage.setItem(localStorageRageSentencesName, JSON.stringify(currentStorage));
+    }
+
     function onCorrectWord(word, myself = false) {
-        if(settings.learningEnabled || myself){
+        if (settings.learningEnabled || myself) {
             saveWord(word, myself);
         }
         alreadyUsedWords.push(word);
     }
 
-    function humanTyping(word, i) {
+    function humanTyping(word, i = 0) {
         if (i >= word.length) {
             return;
         }
@@ -82,14 +122,8 @@
         setTimeout(() => {
             // 5% luck to do mistake
             if (Math.random() < 0.05) {
-                let mistake = '';
-                for (let i = 0; i < rand(1, 2); i++) {
-                    mistake += String.fromCharCode(
-                        Math.floor(Math.random() * 26) + 97
-                    );
-                }
                 channel.socket.emit("setWord", {
-                    word: word.substring(0, i) + mistake,
+                    word: word.substring(0, i) + getRandomChars(rand(1, 2)),
                     validate: false
                 });
                 humanTyping(word, i);
@@ -108,15 +142,23 @@
     }
 
     function onPlayerTurn() {
+        let wordRoot = channel.data['wordRoot'].toLowerCase();
+        log('Word root is:', wordRoot);
+
         let dic = JSON.parse(localStorage.getItem(localStorageName));
         let correctWords = dic.filter(w => {
             let lcWord = w['word'].toLowerCase();
-            return (!alreadyUsedWords.includes(lcWord)) && lcWord.includes(channel.data['wordRoot'].toLowerCase());
+            return (!alreadyUsedWords.includes(lcWord)) && lcWord.includes(wordRoot);
         });
 
         if (correctWords.length > 0) {
             // get the more popular and shorter word
             let word = correctWords.sort(function (a, b) {
+                // 6% chance to (a < b) to add some randomness to bot
+                if (Math.random() < 0.06) {
+                    return 1;
+                }
+
                 // if same popularity get the shorter one
                 if (a['popularity'] === b['popularity']) {
                     return a.length - b.length;
@@ -125,14 +167,27 @@
                 return b['popularity'] - a['popularity'];
             })[0]['word'];
 
-            if(settings.typingEnabled){
+            // 1% chance to do mistake in word (just add/replace random letter a random position in the word)
+            if (Math.random() < 0.01) {
+                word = setCharAt(word, getRandomChars(rand(1, 2)), rand(0, 1));
+            }
+
+            if (settings.typingEnabled) {
                 log('Typing:', word);
                 setTimeout(() => {
-                    humanTyping(word, 0);
+                    humanTyping(word);
                 }, rand(950, 950 + word.length * 100));
             }
         } else {
-            log('No words match: ', channel.data['wordRoot'])
+            log('No words match:', channel.data['wordRoot']);
+            if(settings.rageEnabled){
+                // 10% chance to type word root when raging
+                let rageSentence = Math.random() < 0.1 ? wordRoot : getRandomRageSentence();
+                log('Raging:', rageSentence);
+                setTimeout(() => {
+                    humanTyping(rageSentence);
+                }, rand(1200, 1200 + rageSentence.length * 100));
+            }
         }
     }
 
@@ -140,25 +195,44 @@
         alreadyUsedWords = [];
     }
 
-    function loadSettings(){
+    function loadSettings() {
         let storedSettings = {};
-        try{
-            storedSettings = JSON.parse(localStorage.getItem(localStorageSettingdName));
-        }catch (e) {
+        try {
+            storedSettings = JSON.parse(localStorage.getItem(localStorageSettingsName));
+        } catch (e) {
 
         }
 
-        if(storedSettings){
+        if (storedSettings) {
             settings = Object.assign(settings, storedSettings);
         }
     }
-    
+
     function saveSettings() {
-        localStorage.setItem(localStorageSettingdName, JSON.stringify(settings));
+        localStorage.setItem(localStorageSettingsName, JSON.stringify(settings));
     }
 
     function rand(min, max) {
-        return Math.trunc(Math.random() * (max - min) + min);
+        return Math.trunc(Math.random() * (max - min + 1) + min);
+    }
+
+    function setCharAt(str, char, index, replace = false) {
+        if(index > str.length-1){
+            return str;
+        }
+
+        return str.substr(0,index) + char + str.substr(index + replace);
+    }
+
+    function getRandomChars(num = 1){
+        let chars = '';
+        for (let i = 0; i < num; i++) {
+            chars += String.fromCharCode(
+                Math.floor(Math.random() * 26) + 97
+            );
+        }
+
+        return chars;
     }
 
     function log(...messages) {
@@ -168,6 +242,7 @@
     function init() {
         loadSettings();
         log(`Typing ${settings.typingEnabled ? 'is' : 'is not'} enabled`);
+        log(`Rage ${settings.rageEnabled ? 'is' : 'is not'} enabled`);
         log(`Learning ${settings.learningEnabled ? 'is' : 'is not'} enabled`);
 
         channel.socket.on('setWord', word => {
@@ -214,6 +289,7 @@
         window.bot.addWord = saveWord;
         window.bot.getWords = getWords;
         window.bot.deleteWord = deleteWord;
+        window.bot.addRageSentence = addRageSentence;
         window.bot.enableLearning = (param = true) => {
             settings.learningEnabled = param === true;
             log(`Learning is now ${settings.learningEnabled ? 'enabled' : 'disabled'}`);
@@ -223,6 +299,12 @@
         window.bot.enableTyping = (param = true) => {
             settings.typingEnabled = param === true;
             log(`Typing is now ${settings.typingEnabled ? 'enabled' : 'disabled'}`);
+            saveSettings();
+        };
+
+        window.bot.enableRage = (param = true) => {
+            settings.rageEnabled = param === true;
+            log(`Rage is now ${settings.rageEnabled ? 'enabled' : 'disabled'}`);
             saveSettings();
         };
     }
