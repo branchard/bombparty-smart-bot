@@ -32,10 +32,22 @@
             }
         }
 
+        let findResult = currentStorage.findIndex(w => {
+            return w['word'] === word;
+        });
+
         // if word is not already present is locale storage
-        if (currentStorage.indexOf(word) === -1) {
+        if (findResult === -1) {
             log('New word learned:', word);
-            currentStorage.push(word);
+            currentStorage.push({
+                word: word,
+                popularity: 0
+            });
+        } else if (!myself || !settings.typingEnabled) {
+            currentStorage[findResult] = {
+                word: word,
+                popularity: currentStorage[findResult]['popularity'] + 1
+            }
         }
 
         localStorage.setItem(localStorageName, JSON.stringify(currentStorage));
@@ -85,15 +97,20 @@
     function onPlayerTurn() {
         let dic = JSON.parse(localStorage.getItem(localStorageName));
         let correctWords = dic.filter(w => {
-            let lcWord = w.toLowerCase();
+            let lcWord = w['word'].toLowerCase();
             return (!alreadyUsedWords.includes(lcWord)) && lcWord.includes(channel.data['wordRoot'].toLowerCase());
         });
 
         if (correctWords.length > 0) {
-            // get the shorter word
+            // get the more popular and shorter word
             let word = correctWords.sort(function (a, b) {
-                return a.length - b.length;
-            })[0];
+                // if same popularity get the shorter one
+                if (a['popularity'] === b['popularity']) {
+                    return a.length - b.length;
+                }
+
+                return b['popularity'] - a['popularity'];
+            })[0]['word'];
 
             log('Typing:', word);
             setTimeout(() => {
