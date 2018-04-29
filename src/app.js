@@ -262,6 +262,8 @@
             if (channel.data.actors[playerIndex].authId === app.user.authId) {
                 log('It\'s my turn');
                 onPlayerTurn();
+            }else{
+                stopTyping();
             }
         });
 
